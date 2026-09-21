@@ -1,9 +1,11 @@
 name: ci
+
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -12,13 +14,44 @@ jobs:
         python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install --quiet -e .
+
+      - name: Install
+        run: pip install --quiet -e .
+
+      # These guard the properties downstream studies depend on: that TSS is
+      # zero for any constant forecast, that a grouped bootstrap is genuinely
+      # wider than an i.i.d. one, and that a retraining comparison reports
+      # significance in both directions rather than only when it improves.
       - name: Invariants
         run: python tests/test_benchgap.py
+
       - name: Package builds
         run: |
           pip install --quiet build
           python -m build
+
+      # The whole point of this package is that every domain computes TSS with
+      # identical code. If evaluate.py's body ever changes, downstream numbers
+      # change with it, so the change must be deliberate: update this hash in
+      # the same commit and say why in the message.
+      - name: Scoring code is unchanged
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib
+          src = pathlib.Path("benchgap/evaluate.py").read_text(encoding="utf-8")
+          body = src[src.index("from __future__ import annotations"):]
+          got = hashlib.sha256(body.encode()).hexdigest()
+          want = "8e4c82594ce72bec5992a0773cd658ce1b0bdd116ad602e26f2d8fdc30e9c29f"
+          print("sha256:", got)
+          assert got == want, (
+              "evaluate.py body changed. Every published number in every "
+              "downstream study depends on this code. If the change is "
+              "intended, update the expected hash in this workflow and "
+              "re-verify each study reproduces."
+          )
+          print("unchanged")
+          PY
