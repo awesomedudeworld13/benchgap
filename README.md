@@ -131,6 +131,7 @@ same code:
 | [phish-drift](https://github.com/awesomedudeworld13/phish-drift) | phishing-URL datasets, two of which a regex solves better than published models |
 | [ozone-drift](https://github.com/awesomedudeworld13/ozone-drift) | Houston smog forecasting — the control case, where honest testing holds up |
 | [SolarFlarePredictor](https://github.com/solarflarepredictor-cmd/SolarFlarePredictor) | solar flare forecasting from satellite magnetic-field data |
+| [same repo](https://github.com/solarflarepredictor-cmd/SolarFlarePredictor) | geomagnetic storms from L1 solar-wind data — the first domain built *on* this package rather than extracted from |
 
 Those studies make a claim that only works if every number is comparable:
 *how far a benchmark score falls in deployment depends on what kind of change
