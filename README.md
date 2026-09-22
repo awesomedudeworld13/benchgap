@@ -3,10 +3,10 @@
 **Measure how much of a machine-learning benchmark score survives deployment.**
 
 A model scores 0.99 on a held-out test set. What does it score on real data six
-months later? The gap between those two numbers is usually reported — if at all —
-as a single figure, which names an effect without explaining it. `benchgap`
-helps you break it into pieces you can act on, with confidence intervals that
-aren't quietly wrong.
+months later? The gap between those two numbers is usually reported as a single
+figure, if it is reported at all, which names an effect without explaining it.
+`benchgap` helps you break that figure into pieces you can act on, with
+confidence intervals that aren't quietly wrong.
 
 ```bash
 pip install benchgap
@@ -23,9 +23,9 @@ narrow, because the rows being resampled aren't independent:
 
 | Domain | The trap | Group by |
 |---|---|---|
-| Phishing detection | 200 URLs on one hacked website look like 200 observations; they're closer to **one** | website |
-| Air-quality forecasting | 17 stations recording the same smog event look like 17; they're **one** weather event | day |
-| Solar flare forecasting | 300 snapshots of one sunspot group look like 300; the group is **one** thing | region |
+| Phishing detection | 200 URLs on one hacked website look like 200 observations, but they are closer to **one** | website |
+| Air-quality forecasting | 17 stations recording the same smog event look like 17, but they are **one** weather event | day |
+| Solar flare forecasting | 300 snapshots of one sunspot group look like 300, but the group is **one** thing | region |
 
 Resample rows independently in any of those and you'll report an interval that
 looks convincing and isn't. `benchgap` takes a `groups` argument everywhere it
@@ -37,7 +37,7 @@ import benchgap as bg
 lo, hi = bg.cluster_bootstrap_ci(y, prob, threshold, groups=website, n_resamples=1000)
 ```
 
-This isn't optional politeness. It's the difference between an interval that
+This isn't optional politeness. It is the difference between an interval that
 means something and one that doesn't.
 
 ---
@@ -58,22 +58,22 @@ scores = bg.score_at(y_test, prob_test, threshold)
 print(scores.tss, scores.recall, scores.false_alarm_rate)
 ```
 
-**TSS** (True Skill Statistic) = recall − false-alarm rate. It is **0 for any
-constant forecast**, which makes the zero line a real no-skill baseline.
-Accuracy can't do that job: when one outcome is rare, a model that always
-predicts the common case scores 98% and has no skill at all.
+**TSS** (True Skill Statistic) = recall − false-alarm rate. It is 0 for any
+constant forecast, which makes the zero line a real no-skill baseline. Accuracy
+can't do that job: when one outcome is rare, a model that always predicts the
+common case scores 98% and has no skill at all.
 
 ### Build a chain of comparisons
 
-A "cell" is one model scored on one dataset. Line several up so each step
-changes **exactly one thing**, and the total drop becomes attributable instead
-of merely observed.
+A "cell" is one model scored on one dataset. Line several up so that each step
+changes exactly one thing, and the total drop becomes attributable instead of
+merely observed.
 
 ```python
 cells = {
-    "shuffled":    bg.evaluate_cell("shuffled", "random split — the common protocol",
+    "shuffled":    bg.evaluate_cell("shuffled", "random split, the common protocol",
                                     y1, p1, thresholds, groups=g1),
-    "honest":      bg.evaluate_cell("honest", "grouped split — no leakage",
+    "honest":      bg.evaluate_cell("honest", "grouped split, no leakage",
                                     y2, p2, thresholds, groups=g2),
     "operational": bg.evaluate_cell("operational", "live data, model frozen",
                                     y3, p3, thresholds, groups=g3),
@@ -89,7 +89,7 @@ print(bg.attribute(cells, steps)["tss"])
 ```
 
 A step whose endpoints are missing is skipped rather than guessed at, and
-`total` is computed from the first and last cell directly — so it stays correct
+`total` is computed from the first and last cell directly, so it stays correct
 even when an intermediate cell doesn't exist.
 
 ### Ask whether retraining helps
@@ -100,8 +100,8 @@ result = bg.recovery(gap_tss, retrained_tss, ci)
 #  'direction': 'harms', 'significant': True}
 ```
 
-The interval can exclude zero in **either** direction. A retrained model that's
-measurably *worse* is a finding, not a null — testing only for improvement would
+The interval can exclude zero in either direction. A retrained model that is
+measurably *worse* is a finding, not a null. Testing only for improvement would
 report it as "not significant" and throw it away.
 
 ---
@@ -116,8 +116,8 @@ report it as "not significant" and throw it away.
 | `Cell`, `evaluate_cell`, `attribute`, `step_descriptions` | chains of comparisons and their decomposition |
 | `recovery` | interpret a retraining comparison in either direction |
 
-The interface is **arrays in, dicts out**. It never sees a DataFrame, a model
-object, or a file path — the three studies that drove its design disagree about
+The interface is arrays in, dicts out. It never sees a DataFrame, a model
+object, or a file path. The three studies that drove its design disagree about
 all of those, and anything wider would have forced a data model onto domains
 that don't want one.
 
@@ -129,14 +129,14 @@ same code:
 | Study | What it measures |
 |---|---|
 | [phish-drift](https://github.com/awesomedudeworld13/phish-drift) | phishing-URL datasets, two of which a regex solves better than published models |
-| [ozone-drift](https://github.com/awesomedudeworld13/ozone-drift) | Houston smog forecasting — the control case, where honest testing holds up |
+| [ozone-drift](https://github.com/awesomedudeworld13/ozone-drift) | Houston smog forecasting, the control case, where honest testing holds up |
 | [SolarFlarePredictor](https://github.com/solarflarepredictor-cmd/SolarFlarePredictor) | solar flare forecasting from satellite magnetic-field data |
-| [same repo](https://github.com/solarflarepredictor-cmd/SolarFlarePredictor) | geomagnetic storms from L1 solar-wind data — the first domain built *on* this package rather than extracted from |
+| [same repo](https://github.com/solarflarepredictor-cmd/SolarFlarePredictor) | geomagnetic storms from L1 solar-wind data, the first domain built *on* this package rather than extracted from |
 
-Those studies make a claim that only works if every number is comparable:
-*how far a benchmark score falls in deployment depends on what kind of change
-the model faces.* Three copies of the scoring code kept in sync by a hash check
-would drift eventually — and when they did, the comparison would silently stop
+Those studies make a claim that only works if every number is comparable: *how
+far a benchmark score falls in deployment depends on what kind of change the
+model faces.* Three copies of the scoring code kept in sync by a hash check
+would drift eventually, and when they did, the comparison would silently stop
 being a comparison. Hence one package.
 
 ## License
