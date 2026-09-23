@@ -104,6 +104,20 @@ The interval can exclude zero in either direction. A retrained model that is
 measurably *worse* is a finding, not a null. Testing only for improvement would
 report it as "not significant" and throw it away.
 
+### Choose cutoffs that transfer
+
+```python
+pol = bg.choose_threshold(y_val, prob_val, reference_base_rate=in_season_rate)
+# refuses a validation window with a missing or tiny class,
+# flags one from a different regime, calibrates, then picks the cutoff
+calibrated = pol["calibrate"](prob_test)
+print(bg.transfer_report(y_test, calibrated, pol["threshold"]))
+# frozen TSS next to peak TSS and Brier: "the model got worse"
+# and "the cutoff moved" can't be confused
+```
+
+The rules behind it are in [THRESHOLDS.md](THRESHOLDS.md).
+
 ---
 
 ## What's in it
@@ -115,6 +129,7 @@ report it as "not significant" and throw it away.
 | `cluster_bootstrap_ci`, `paired_difference_ci` | uncertainty that respects grouping |
 | `Cell`, `evaluate_cell`, `attribute`, `step_descriptions` | chains of comparisons and their decomposition |
 | `recovery` | interpret a retraining comparison in either direction |
+| `check_validation`, `isotonic_calibrator`, `choose_threshold`, `transfer_report` | the threshold policy: validation checks, calibration, cutoff-transfer reporting |
 
 The interface is arrays in, dicts out. It never sees a DataFrame, a model
 object, or a file path. The three studies that drove its design disagree about

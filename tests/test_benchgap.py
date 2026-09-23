@@ -145,6 +145,48 @@ def test_brier_skill_is_zero_for_climatology():
     assert abs(bg.brier_skill(y, prob)) < 1e-12
 
 
+def test_single_class_validation_is_refused():
+    """The phishing P2 failure: a window with no benign rows must not yield a cutoff."""
+    try:
+        bg.check_validation(np.ones(600, dtype=int))
+    except bg.ValidationError:
+        return
+    raise AssertionError("single-class validation was accepted")
+
+
+def test_off_regime_validation_is_flagged():
+    """The ozone failure: an off-season window has a far lower base rate than the season."""
+    y = np.array([1] * 40 + [0] * 3960)             # 1%, against a 10% in-season rate
+    assert bg.check_validation(y, reference_base_rate=0.10)["regime_mismatch"]
+    assert not bg.check_validation(y, reference_base_rate=0.012)["regime_mismatch"]
+
+
+def test_calibrated_cutoff_survives_a_rescaled_refit():
+    """A refit model whose scores are squashed must keep a calibrated cutoff's meaning.
+
+    The raw cutoff chosen on model A applied to model B's raw scores is the
+    ozone-F / solar-F mistake; calibrating each model on validation fixes it.
+    """
+    rng = np.random.default_rng(3)
+    y = rng.binomial(1, 0.2, 4000)
+    a = np.clip(0.2 + 0.5 * y + rng.normal(0, 0.15, 4000), 0, 1)
+    b = a ** 3                                            # same ranking, different scale
+    raw_thr = bg.select_threshold(y, a, "tss")
+    pol_a = bg.choose_threshold(y, a)
+    pol_b_cal = bg.isotonic_calibrator(b, y)
+    raw_transfer = bg.score_at(y, b, raw_thr).tss
+    cal_transfer = bg.score_at(y, pol_b_cal(b), pol_a["threshold"]).tss
+    assert cal_transfer > raw_transfer + 0.1, (raw_transfer, cal_transfer)
+
+
+def test_transfer_report_separates_cutoff_from_skill():
+    rng = np.random.default_rng(5)
+    y = rng.binomial(1, 0.1, 3000)
+    prob = np.clip(0.1 + 0.5 * y + rng.normal(0, 0.1, 3000), 0, 1)
+    r = bg.transfer_report(y, prob, threshold=0.95)
+    assert r["threshold_did_not_transfer"] and r["peak_tss"] > 0.8
+
+
 def _run_all():
     failures = 0
     for name, fn in sorted(globals().items()):

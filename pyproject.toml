@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "benchgap"
-version = "0.1.0"
+version = "0.2.0"
 description = "Measure how much of a machine-learning benchmark score survives deployment."
 readme = "README.md"
 requires-python = ">=3.10"

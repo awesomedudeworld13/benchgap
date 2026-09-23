@@ -27,11 +27,20 @@ from .evaluate import (
     tss_from_confusion,
 )
 
-__version__ = "0.1.0"
+from .policy import (
+    ValidationError,
+    check_validation,
+    choose_threshold,
+    isotonic_calibrator,
+    transfer_report,
+)
+
+__version__ = "0.2.0"
 
 __all__ = [
     "Scores", "brier", "brier_skill", "cluster_bootstrap_ci", "confusion",
     "paired_difference_ci", "peak_tss", "score_at", "select_threshold",
     "tss_from_confusion", "Cell", "attribute", "evaluate_cell", "recovery",
-    "step_descriptions", "BOOTSTRAP_RESAMPLES", "__version__",
+    "step_descriptions", "BOOTSTRAP_RESAMPLES", "ValidationError", "check_validation",
+    "choose_threshold", "isotonic_calibrator", "transfer_report", "__version__",
 ]
