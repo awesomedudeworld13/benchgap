@@ -1,0 +1,178 @@
+"""Which commits and which lines came from AI (Claude Code) sessions.
+
+AI DISCLOSURE: this script was written by Claude (Anthropic's Claude Code),
+2026-09-23. It is raw material for the team's AI-use statement, which the team
+writes. It reports facts only.
+
+    python studies/ai_inventory.py          # -> studies/AI_INVENTORY.md
+
+How attribution works. Claude Code commits under the user's own git identity,
+so git alone can't separate AI commits from the team's. But every Claude Code
+session keeps a transcript recording each `git commit` it ran. A commit whose
+subject line matches one issued in a transcript is counted as made in an AI
+session; commits by the fair-record bots are counted separately; everything
+else is "no transcript match". `git blame` then attributes each current line of
+every source and document file to the commit that last touched it.
+
+Limits, stated in the output too:
+  * Claude Code deletes transcripts after 30 days by default. Sessions from
+    before the retention change (2026-09-23) may be gone, so AI-session
+    commits from those periods fall into "no transcript match". The AI share
+    is a LOWER bound.
+  * A line counts as AI-session if the commit that last touched it came from
+    an AI session, even if a person edited that line before the commit (and
+    vice versa).
+  * Transcripts contain secrets pasted during sessions. This script reads only
+    commit commands from them and never copies transcript text into its output.
+"""
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from collections import Counter, defaultdict
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+HOME = Path.home()
+TRANSCRIPT_DIRS = [HOME / ".claude" / "projects", HOME / "sef-ai-log"]
+REPOS = {"phish-drift": ["origin/main", "origin/testing-new"],
+         "ozone-drift": ["origin/main", "origin/testing-new"],
+         "SolarFlareProject": ["origin/main", "origin/testing-new"],
+         "benchgap": ["origin/main"]}
+TEXT = {".py", ".md", ".yml", ".yaml", ".html", ".js", ".toml", ".txt", ".cfg", ".css", ".ts", ".tsx"}
+BOTS = ("github-actions[bot]",)
+BOT_SUBJECTS = re.compile(r"^(Log prediction cycle|data: live snapshot|results: rebuild|testing-new: (live|log) )")
+
+_M_START = re.compile(r"""git\s+(?:-C\s+\S+\s+)?commit\b[^\n]*?\s-[a-zA-Z]*m\s+(?:@'\s*\n)?""")   # -m, -qm, -am, -qam
+
+
+def _quoted_first_line(cmd: str, i: int) -> str:
+    """First line of the -m message starting at cmd[i], stopping at its closing quote."""
+    q = cmd[i] if i < len(cmd) and cmd[i] in "\"'" else ""
+    j = end = i + (1 if q else 0)
+    while end < len(cmd) and cmd[end] != "\n" and not (q and cmd[end] == q and cmd[end - 1] != "\\"):
+        end += 1
+    return cmd[j:end].strip()
+_F = re.compile(r"""git\s+(?:-C\s+\S+\s+)?commit\b[^\n]*?-F\s+-\s+<<-?\s*['"]?(\w+)['"]?[^\n]*\n(.+)""")
+
+
+def transcript_subjects() -> tuple[set[str], list[str]]:
+    subjects: set[str] = set()
+    seen_files: set[str] = set()
+    dates: list[str] = []
+    for d in TRANSCRIPT_DIRS:
+        for f in d.rglob("*.jsonl") if d.exists() else []:
+            if f.name in seen_files:          # sef-ai-log holds copies of the same files
+                continue
+            seen_files.add(f.name)
+            for line in f.open(encoding="utf-8", errors="replace"):
+                if '"git' not in line and "git " not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("timestamp"):
+                    dates.append(rec["timestamp"][:10])
+                content = (rec.get("message") or {}).get("content")
+                if not isinstance(content, list):
+                    continue
+                for item in content:
+                    if item.get("type") != "tool_use":
+                        continue
+                    cmd = str((item.get("input") or {}).get("command", ""))
+                    for m in _F.finditer(cmd):
+                        subjects.add(m.group(2).strip())
+                    for m in _M_START.finditer(cmd):
+                        subj = _quoted_first_line(cmd, m.end())
+                        if subj:
+                            subjects.add(subj)
+    return subjects, sorted(set(dates))
+
+
+def git(repo: Path, *args) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace").stdout
+
+
+def classify(author: str, subject: str, ai: set[str]) -> str:
+    if author in BOTS or BOT_SUBJECTS.match(subject):
+        return "bot"
+    if subject.strip() in ai:
+        return "ai_session"
+    if subject.startswith("Merge pull request"):
+        return "merge (by a person on GitHub)"
+    return "no_transcript_match"
+
+
+def main():
+    ai, dates = transcript_subjects()
+    root = HERE.parent.parent
+    out = ["# AI-use inventory",
+           "",
+           "Generated by `studies/ai_inventory.py` (AI-written; see its header). Facts for the",
+           "team's AI-use statement, not the statement itself.",
+           "",
+           f"- Transcripts found cover {len(dates)} distinct days"
+           + (f", {dates[0]} to {dates[-1]}" if dates else "") + ".",
+           "- Claude Code deleted transcripts older than 30 days until 2026-09-23, so AI-session",
+           "  commits from uncovered days are counted under *no transcript match*. **The AI share",
+           "  below is a lower bound.**",
+           "- *No transcript match* means **unknown**, not human-written: it covers the team's own",
+           "  commits and AI-session commits whose transcripts no longer exist. Repos developed",
+           "  mostly before September 2026 (SolarFlareProject) are dominated by this column.",
+           "- Bots are the fair-record jobs (daily snapshots, forecast logs, result rebuilds).",
+           ""]
+    intro, out = out, []
+    summary = {}
+    for name, refs in REPOS.items():
+        repo = root / name
+        if not repo.exists():
+            out.append(f"_{name}: clone not found_\n"); continue
+        commit_cat: dict[str, str] = {}
+        counts = defaultdict(Counter)
+        for ref in refs:
+            for line in git(repo, "log", ref, "--format=%H\x1f%an\x1f%s").splitlines():
+                sha, author, subject = line.split("\x1f", 2)
+                cat = classify(author, subject, ai)
+                commit_cat[sha] = cat
+                counts[ref][cat] += 1
+        out += [f"## {name}", "", "| Branch | AI session | No transcript match | Bot | Merges |", "|---|---|---|---|---|"]
+        for ref in refs:
+            c = counts[ref]
+            out.append(f"| {ref.split('/', 1)[1]} | {c['ai_session']} | {c['no_transcript_match']} | "
+                       f"{c['bot']} | {c['merge (by a person on GitHub)']} |")
+        out += ["", "Current lines by origin (`git blame`, text files only):", "",
+                "| Branch | File | Lines | AI session | No transcript match | Bot |", "|---|---|---|---|---|---|"]
+        for ref in refs:
+            files = [f for f in git(repo, "ls-tree", "-r", "--name-only", ref).splitlines()
+                     if Path(f).suffix.lower() in TEXT]
+            tot = Counter()
+            rows = []
+            for f in files:
+                c = Counter()
+                for ln in git(repo, "blame", "--line-porcelain", ref, "--", f).splitlines():
+                    if re.match(r"^[0-9a-f]{40} \d+ \d+", ln):
+                        c[commit_cat.get(ln[:40], "no_transcript_match")] += 1
+                n = sum(c.values())
+                if not n:
+                    continue
+                tot += c
+                rows.append((f, n, c))
+            for f, n, c in sorted(rows):
+                out.append(f"| {ref.split('/', 1)[1]} | `{f}` | {n} | {c['ai_session'] / n:.0%} | "
+                           f"{c['no_transcript_match'] / n:.0%} | {c['bot'] / n:.0%} |")
+            n = sum(tot.values()) or 1
+            summary[f"{name} ({ref.split('/', 1)[1]})"] = (sum(tot.values()), tot["ai_session"] / n,
+                                                           tot["no_transcript_match"] / n, tot["bot"] / n)
+        out.append("")
+    head = ["## Summary: current lines of text files", "",
+            "| Repo (branch) | Lines | AI session | No transcript match | Bot |", "|---|---|---|---|---|"]
+    head += [f"| {k} | {v[0]:,} | {v[1]:.0%} | {v[2]:.0%} | {v[3]:.0%} |" for k, v in summary.items()]
+    (HERE / "AI_INVENTORY.md").write_text("\n".join(intro + head + [""] + out) + "\n", encoding="utf-8")
+    print(f"wrote {HERE / 'AI_INVENTORY.md'}: {len(ai)} commit subjects found in transcripts")
+
+
+if __name__ == "__main__":
+    main()

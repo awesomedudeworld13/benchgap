@@ -4,3 +4,8 @@ dist/
 build/
 *.egg-info/
 .venv/
+
+# Generated study outputs stay local: they include results from a private repo and
+# draft disclosure material the team has not reviewed.
+studies/*.md
+studies/*.json
