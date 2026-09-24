@@ -105,6 +105,18 @@ def collect(root: Path) -> dict:
         rq1.append(rq1_row(f"phishing ({corpus})", "main", r["cells"], "cell1_benchmark_random",
                            "cell2_benchmark_disjoint", "cell4_live_realistic_benign"))
 
+    st = show(root, "SolarFlareProject", "origin/main", "solarflare/experiments/results/storm_live_training.json")
+    if st and "cells" in st:
+        c, mm = st["cells"], st["model_moved_D_minus_B"]
+        rq2.append({"domain": "geomagnetic storms", "source": "main",
+                    "live_bench_model": c["B_benchmark_trained_on_live_era"]["tss"],
+                    "live_live_model": c["D_live_era_trained_on_live_era"]["tss"],
+                    "model_moved": mm["frozen"], "model_moved_ci": mm["frozen_ci95"],
+                    "model_moved_peak": mm["peak"], "model_moved_peak_ci": mm["peak_ci95"],
+                    "note": "same-learner and size-matched pairs are in storm_live_training.json"})
+    else:
+        missing.append("geomagnetic storms RQ2 (not run yet: needs the team's pre-registration)")
+
     s = show(root, "SolarFlareProject", "origin/testing-new", "testing_new/rq2_gap_cycle25.json")
     if s:
         dep, liv = s["models"]["deployed"], s["models"]["live_D"]
@@ -176,7 +188,6 @@ def markdown(doc: dict) -> str:
                    f"{f(r.get('benchmark_moved'))} |")
     out += ["",
             "- **Model moved** compares two models on the same live rows, so any change in a gap that it does not account for came from the benchmark side (**Benchmark moved**).",
-            "- Geomagnetic storms have no live-trained model yet.",
             ""]
     notes: dict[str, list[str]] = {}
     for r in doc["rq2"]:
